@@ -1,0 +1,175 @@
+openapi: 3.0.3
+info:
+  title: MedLab LIMS API
+  version: 1.0.0-rc.2
+  description: Release-critical contract for health checks and the two-step login flow.
+servers:
+  - url: https://api.example.com/api
+    description: Replace with the production API origin.
+  - url: http://127.0.0.1:8000/api
+    description: Local UAT
+tags:
+  - name: Health
+  - name: Authentication
+paths:
+  /health/live:
+    get:
+      tags: [Health]
+      summary: Process liveness
+      operationId: getLiveness
+      responses:
+        "200":
+          description: Application process is running.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Liveness"
+  /health/ready:
+    get:
+      tags: [Health]
+      summary: Dependency readiness
+      operationId: getReadiness
+      responses:
+        "200":
+          description: Database and writable storage are ready.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Readiness"
+        "503":
+          description: At least one required dependency is unavailable.
+  /user/login:
+    post:
+      tags: [Authentication]
+      summary: Validate credentials and send a login OTP
+      operationId: login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+                  format: password
+      responses:
+        "200":
+          description: Credentials accepted and OTP dispatched.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiMessage"
+        "400":
+          description: Invalid request or credentials.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "429":
+          description: Authentication rate limit exceeded.
+  /user/verifyOTP:
+    post:
+      tags: [Authentication]
+      summary: Verify login OTP and issue an access token
+      operationId: verifyLoginOtp
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, otp, type]
+              properties:
+                email:
+                  type: string
+                  format: email
+                otp:
+                  type: string
+                  pattern: "^[0-9]{6}$"
+                type:
+                  type: string
+                  enum: [login]
+      responses:
+        "200":
+          description: OTP accepted; the payload contains the authenticated user and token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthSuccess"
+        "400":
+          description: Invalid or expired OTP.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "429":
+          description: Authentication rate limit exceeded.
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: Sanctum token
+  schemas:
+    Liveness:
+      type: object
+      required: [status, service, version, time]
+      properties:
+        status:
+          type: string
+          enum: [ok]
+        service:
+          type: string
+        version:
+          type: string
+        time:
+          type: string
+          format: date-time
+    Readiness:
+      type: object
+      required: [status, checks, time]
+      properties:
+        status:
+          type: string
+          enum: [ready]
+        checks:
+          type: object
+          required: [database, storage]
+          properties:
+            database:
+              type: string
+              enum: [ok]
+            storage:
+              type: string
+              enum: [ok]
+        time:
+          type: string
+          format: date-time
+    ApiMessage:
+      type: object
+      required: [code, message, server_time, payload]
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        server_time:
+          type: string
+        payload:
+          nullable: true
+    ApiError:
+      allOf:
+        - $ref: "#/components/schemas/ApiMessage"
+    AuthSuccess:
+      allOf:
+        - $ref: "#/components/schemas/ApiMessage"
+        - type: object
+          properties:
+            payload:
+              type: object
+              additionalProperties: true
